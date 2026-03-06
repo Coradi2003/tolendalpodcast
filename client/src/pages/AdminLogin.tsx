@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useLocation, Link } from "wouter";
-import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -17,28 +16,27 @@ export default function AdminLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const loginMutation = trpc.admin.login.useMutation({
-    onSuccess: () => {
-      login("admin-secret-token");
-      toast.success("Login realizado com sucesso!");
-      setLocation("/admin/dashboard");
-    },
-    onError: (err) => {
-      setError(err.message);
-      toast.error(err.message);
-    },
-  });
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
     if (!username.trim() || !password.trim()) {
       setError("Preencha todos os campos");
       return;
     }
+
     setIsLoading(true);
+
     try {
-      await loginMutation.mutateAsync({ username, password });
+      if (username === "admin" && password === "0000") {
+        login("admin-secret-token");
+        localStorage.setItem("adminAuth", "true");
+        toast.success("Login realizado com sucesso!");
+        setLocation("/admin/dashboard");
+      } else {
+        setError("Usuário ou senha inválidos");
+        toast.error("Usuário ou senha inválidos");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -49,10 +47,10 @@ export default function AdminLogin() {
       className="min-h-screen flex flex-col items-center justify-center px-4 relative overflow-hidden"
       style={{
         backgroundColor: "var(--background)",
-        background: "linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(255, 107, 53, 0.1) 100%)",
+        background:
+          "linear-gradient(135deg, rgba(0, 217, 255, 0.1) 0%, rgba(255, 107, 53, 0.1) 100%)",
       }}
     >
-      {/* Background blurs */}
       <div className="absolute inset-0 opacity-30">
         <div
           className="absolute top-20 right-20 w-72 h-72 rounded-full blur-3xl"
@@ -64,7 +62,6 @@ export default function AdminLogin() {
         />
       </div>
 
-      {/* Logo */}
       <div className="mb-8 text-center relative z-10">
         <Link href="/">
           <div className="flex items-center gap-3 justify-center mb-3 cursor-pointer">
@@ -89,7 +86,6 @@ export default function AdminLogin() {
         </p>
       </div>
 
-      {/* Card */}
       <Card
         className="w-full max-w-md backdrop-blur-md relative z-10"
         style={{
@@ -103,7 +99,8 @@ export default function AdminLogin() {
             <div
               className="w-10 h-10 rounded-lg flex items-center justify-center"
               style={{
-                background: "linear-gradient(135deg, rgba(0, 217, 255, 0.2) 0%, rgba(255, 107, 53, 0.2) 100%)",
+                background:
+                  "linear-gradient(135deg, rgba(0, 217, 255, 0.2) 0%, rgba(255, 107, 53, 0.2) 100%)",
               }}
             >
               <Lock className="w-5 h-5" style={{ color: "var(--primary)" }} />

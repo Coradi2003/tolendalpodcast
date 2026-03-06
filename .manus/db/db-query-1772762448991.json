@@ -1,0 +1,9 @@
+{
+  "query": "DELETE FROM adminCredentials; INSERT INTO adminCredentials (username, passwordHash) VALUES ('pulse', 'f173e195fb4e8b8da58baf3753237752ab943ed995bf3df3e6ff185fb9b02e2a')",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 39uWn9n9VwEqwAn.root --database cQ3BPjvqwZjn96WjVnxJx5 --execute DELETE FROM adminCredentials; INSERT INTO adminCredentials (username, passwordHash) VALUES ('pulse', 'f173e195fb4e8b8da58baf3753237752ab943ed995bf3df3e6ff185fb9b02e2a')",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 434
+}

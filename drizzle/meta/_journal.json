@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1772743512003,
+      "tag": "0000_little_valeria_richards",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1772743631794,
+      "tag": "0001_amusing_meteorite",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1772762590747,
+      "tag": "0002_famous_crusher_hogan",
+      "breakpoints": true
+    }
+  ]
+}

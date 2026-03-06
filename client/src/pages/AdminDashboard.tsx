@@ -40,6 +40,14 @@ interface AdminProfileForm {
   logo: string;
 }
 
+interface Episode {
+  id: number;
+  title: string;
+  description: string;
+  videoUrl: string;
+  publishedAt: string;
+}
+
 function formatDate(date: Date | string) {
   return new Date(date).toLocaleDateString("pt-BR", {
     day: "2-digit",
@@ -60,10 +68,7 @@ export default function AdminDashboard() {
   const [successMessage, setSuccessMessage] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormData>({ title: "", description: "", videoUrl: "" });
-
-  const { data: episodes = [] } = trpc.episodes.list.useQuery(undefined, {
-    enabled: isAdmin,
-  });
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
 
   const { data: sponsors = [] } = trpc.sponsors.list.useQuery(undefined, {
     enabled: isAdmin,
@@ -75,33 +80,22 @@ export default function AdminDashboard() {
 
   const utils = trpc.useUtils();
 
-  const createMutation = trpc.episodes.create.useMutation({
-    onSuccess: () => {
-      toast.success("Episódio criado com sucesso!");
-      setFormData({ title: "", description: "", videoUrl: "" });
-      setSuccessMessage("Episódio publicado com sucesso!");
-      setTimeout(() => setSuccessMessage(""), 3000);
-      utils.episodes.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  useEffect(() => {
+    if (!isAdmin) {
+      setLocation("/admin");
+    }
+  }, [isAdmin, setLocation]);
 
-  const updateMutation = trpc.episodes.update.useMutation({
-    onSuccess: () => {
-      toast.success("Episódio atualizado!");
-      setEditingId(null);
-      utils.episodes.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  useEffect(() => {
+    const savedEpisodes = JSON.parse(localStorage.getItem("episodes") || "[]");
+    setEpisodes(savedEpisodes);
+  }, []);
 
-  const deleteMutation = trpc.episodes.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Episódio removido!");
-      utils.episodes.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  useEffect(() => {
+    if (adminProfile) {
+      setProfileForm({ name: adminProfile.name || "", logo: adminProfile.logo || "" });
+    }
+  }, [adminProfile]);
 
   const createSponsorMutation = trpc.sponsors.create.useMutation({
     onSuccess: () => {
@@ -140,29 +134,40 @@ export default function AdminDashboard() {
     },
   });
 
-  useEffect(() => {
-    if (!isAdmin) {
-      setLocation("/admin");
-    }
-  }, [isAdmin, setLocation]);
-
-  useEffect(() => {
-    if (adminProfile) {
-      setProfileForm({ name: adminProfile.name || "", logo: adminProfile.logo || "" });
-    }
-  }, [adminProfile]);
-
   if (!isAdmin) return null;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!formData.title.trim() || !formData.description.trim() || !formData.videoUrl.trim()) {
       toast.error("Preencha todos os campos");
       return;
     }
+
     setIsSubmitting(true);
+
     try {
-      await createMutation.mutateAsync({ ...formData, adminToken: ADMIN_TOKEN });
+      const savedEpisodes: Episode[] = JSON.parse(localStorage.getItem("episodes") || "[]");
+
+      const newEpisode: Episode = {
+        id: Date.now(),
+        title: formData.title,
+        description: formData.description,
+        videoUrl: formData.videoUrl,
+        publishedAt: new Date().toISOString(),
+      };
+
+      const updatedEpisodes = [newEpisode, ...savedEpisodes];
+
+      localStorage.setItem("episodes", JSON.stringify(updatedEpisodes));
+      setEpisodes(updatedEpisodes);
+
+      setFormData({ title: "", description: "", videoUrl: "" });
+      setSuccessMessage("Episódio publicado com sucesso!");
+      toast.success("Episódio criado com sucesso!");
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (error) {
+      toast.error("Erro ao salvar episódio");
     } finally {
       setIsSubmitting(false);
     }
@@ -173,12 +178,39 @@ export default function AdminDashboard() {
       toast.error("Preencha todos os campos");
       return;
     }
-    await updateMutation.mutateAsync({ id, ...editForm, adminToken: ADMIN_TOKEN });
+
+    try {
+      const updatedEpisodes = episodes.map((ep) =>
+        ep.id === id
+          ? {
+              ...ep,
+              title: editForm.title,
+              description: editForm.description,
+              videoUrl: editForm.videoUrl,
+            }
+          : ep
+      );
+
+      localStorage.setItem("episodes", JSON.stringify(updatedEpisodes));
+      setEpisodes(updatedEpisodes);
+      setEditingId(null);
+      toast.success("Episódio atualizado!");
+    } catch (error) {
+      toast.error("Erro ao atualizar episódio");
+    }
   };
 
   const handleDelete = async (id: number, title: string) => {
     if (!confirm(`Deseja remover o episódio "${title}"?`)) return;
-    await deleteMutation.mutateAsync({ id, adminToken: ADMIN_TOKEN });
+
+    try {
+      const updatedEpisodes = episodes.filter((ep) => ep.id !== id);
+      localStorage.setItem("episodes", JSON.stringify(updatedEpisodes));
+      setEpisodes(updatedEpisodes);
+      toast.success("Episódio removido!");
+    } catch (error) {
+      toast.error("Erro ao remover episódio");
+    }
   };
 
   const handleCreateSponsor = async (e: React.FormEvent) => {
@@ -204,9 +236,13 @@ export default function AdminDashboard() {
     await updateProfileMutation.mutateAsync({ ...profileForm, adminToken: ADMIN_TOKEN });
   };
 
-  const startEdit = (ep: any) => {
+  const startEdit = (ep: Episode) => {
     setEditingId(ep.id);
-    setEditForm({ title: ep.title, description: ep.description || "", videoUrl: ep.videoUrl });
+    setEditForm({
+      title: ep.title,
+      description: ep.description || "",
+      videoUrl: ep.videoUrl,
+    });
   };
 
   return (
@@ -390,7 +426,7 @@ export default function AdminDashboard() {
               Episódios Publicados
             </h2>
             <div className="space-y-3">
-              {episodes.map((ep: any) => (
+              {episodes.map((ep) => (
                 <Card
                   key={ep.id}
                   className="p-4"

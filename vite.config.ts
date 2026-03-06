@@ -5,6 +5,15 @@ import path from "node:path";
 import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 
+export default defineConfig({
+  base: "./",
+  plugins: [
+    react(),
+    tailwindcss(),
+    vitePluginManusRuntime(),
+  ],
+});
+
 // =============================================================================
 // Manus Debug Collector - Vite Plugin
 // Writes browser logs directly to files, trimmed when exceeding size limit
@@ -152,6 +161,7 @@ function vitePluginManusDebugCollector(): Plugin {
 const plugins = [react(), tailwindcss(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
 
 export default defineConfig({
+  base: "./",
   plugins,
   resolve: {
     alias: {

@@ -51,7 +51,7 @@ function formatDate(date: Date | string) {
 export default function AdminDashboard() {
   const [, setLocation] = useLocation();
   const { isAdmin, logout: adminLogout } = useAdminAuth();
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
   const [activeTab, setActiveTab] = useState<"episodes" | "sponsors" | "profile">("episodes");
   const [formData, setFormData] = useState<FormData>({ title: "", description: "", videoUrl: "" });
   const [sponsorForm, setSponsorForm] = useState<SponsorForm>({ name: "", logo: "", url: "" });
@@ -61,10 +61,18 @@ export default function AdminDashboard() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormData>({ title: "", description: "", videoUrl: "" });
 
-  const checkAuthQuery = trpc.admin.checkAuth.useQuery();
-  const { data: episodes = [], refetch } = trpc.episodes.list.useQuery();
-  const { data: sponsors = [] } = trpc.sponsors.list.useQuery();
-  const { data: adminProfile } = trpc.adminProfile.get.useQuery();
+  const { data: episodes = [] } = trpc.episodes.list.useQuery(undefined, {
+    enabled: isAdmin,
+  });
+
+  const { data: sponsors = [] } = trpc.sponsors.list.useQuery(undefined, {
+    enabled: isAdmin,
+  });
+
+  const { data: adminProfile } = trpc.adminProfile.get.useQuery(undefined, {
+    enabled: isAdmin,
+  });
+
   const utils = trpc.useUtils();
 
   const createMutation = trpc.episodes.create.useMutation({
@@ -126,16 +134,17 @@ export default function AdminDashboard() {
       toast.success("Desconectado com sucesso!");
       setLocation("/admin");
     },
+    onError: () => {
+      adminLogout();
+      setLocation("/admin");
+    },
   });
 
   useEffect(() => {
-    if (checkAuthQuery.data !== undefined) {
-      if (!checkAuthQuery.data.isAuthenticated && !isAdmin) {
-        setLocation("/admin");
-      }
-      setIsCheckingAuth(false);
+    if (!isAdmin) {
+      setLocation("/admin");
     }
-  }, [checkAuthQuery.data, isAdmin, setLocation]);
+  }, [isAdmin, setLocation]);
 
   useEffect(() => {
     if (adminProfile) {
@@ -143,15 +152,7 @@ export default function AdminDashboard() {
     }
   }, [adminProfile]);
 
-  if (isCheckingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: "var(--background)" }}>
-        <div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin" style={{ borderColor: "var(--primary)", borderTopColor: "transparent" }} />
-      </div>
-    );
-  }
-
-  if (!isAdmin && !checkAuthQuery.data?.isAuthenticated) return null;
+  if (!isAdmin) return null;
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -210,7 +211,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--background)" }}>
-      {/* Header */}
       <header
         className="sticky top-0 z-50 border-b"
         style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}
@@ -253,7 +253,6 @@ export default function AdminDashboard() {
       </header>
 
       <div className="container py-8">
-        {/* Tabs */}
         <div className="flex gap-2 mb-8 border-b" style={{ borderColor: "var(--border)" }}>
           {[
             { id: "episodes", label: "Episódios", icon: Play },
@@ -262,7 +261,7 @@ export default function AdminDashboard() {
           ].map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              onClick={() => setActiveTab(id as any)}
+              onClick={() => setActiveTab(id as "episodes" | "sponsors" | "profile")}
               className={`px-4 py-3 font-medium text-sm flex items-center gap-2 border-b-2 transition ${
                 activeTab === id ? "border-b-2" : "border-b-transparent"
               }`}
@@ -277,7 +276,6 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* Episodes Tab */}
         {activeTab === "episodes" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2">
@@ -386,7 +384,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Episodes List */}
         {activeTab === "episodes" && (
           <div className="mt-10">
             <h2 className="text-lg font-bold mb-4" style={{ color: "var(--foreground)" }}>
@@ -477,7 +474,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Sponsors Tab */}
         {activeTab === "sponsors" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2">
@@ -545,7 +541,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Sponsors List */}
         {activeTab === "sponsors" && (
           <div className="mt-10">
             <h2 className="text-lg font-bold mb-4" style={{ color: "var(--foreground)" }}>
@@ -563,7 +558,13 @@ export default function AdminDashboard() {
                     {sponsor.name}
                   </h3>
                   {sponsor.url && (
-                    <a href={sponsor.url} target="_blank" rel="noopener noreferrer" className="text-xs mt-2" style={{ color: "var(--primary)" }}>
+                    <a
+                      href={sponsor.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs mt-2"
+                      style={{ color: "var(--primary)" }}
+                    >
                       Visitar site
                     </a>
                   )}
@@ -583,7 +584,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* Profile Tab */}
         {activeTab === "profile" && (
           <div className="max-w-2xl">
             <Card className="p-6" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>

@@ -1,7 +1,7 @@
 {
   "buildCommand": "pnpm run build",
-  "outputDirectory": "dist/public",
   "framework": null,
+  "outputDirectory": "dist/public",
   "routes": [
     {
       "src": "/(.*)",

@@ -1,24 +1,35 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Play, Menu, X, Search, Plus } from "lucide-react";
+import { Play, Menu, X, Search } from "lucide-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import UploadEpisodeModal from "@/components/UploadEpisodeModal";
+
+interface Episode {
+  id: number;
+  title: string;
+  description: string;
+  video_url: string;
+  created_at: string;
+}
 
 function getEmbedUrl(url: string): string {
   if (!url) return "";
+
   const ytMatch = url.match(
     /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
   );
+
   if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`;
+
   if (url.includes("spotify.com")) {
     return url
       .replace("open.spotify.com", "open.spotify.com/embed")
       .replace("/episode/", "/embed/episode/");
   }
+
   return url;
 }
 
@@ -32,11 +43,33 @@ function formatDate(date: Date | string) {
 
 export default function Episodes() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const { isAdmin, adminToken } = useAdminAuth();
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const { isAdmin } = useAdminAuth();
 
-  const { data: episodes = [], refetch } = trpc.episodes.list.useQuery();
+  useEffect(() => {
+    loadEpisodes();
+  }, []);
+
+  async function loadEpisodes() {
+    try {
+      setIsLoading(true);
+
+      const { data, error } = await supabase
+        .from("episodes")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      setEpisodes(data || []);
+    } catch (err) {
+      console.error("Erro ao carregar episódios:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   const filtered = episodes.filter(
     (ep) =>
@@ -46,7 +79,6 @@ export default function Episodes() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--background)" }}>
-      {/* Navbar */}
       <nav
         className="sticky top-0 z-50 border-b backdrop-blur-md"
         style={{ backgroundColor: "rgba(15, 20, 25, 0.8)", borderColor: "var(--border)" }}
@@ -70,6 +102,7 @@ export default function Episodes() {
               </span>
             </div>
           </Link>
+
           <div className="hidden md:flex items-center gap-6">
             <Link href="/">
               <span
@@ -79,6 +112,7 @@ export default function Episodes() {
                 Início
               </span>
             </Link>
+
             <Link href="/episodes">
               <span
                 className="text-sm font-medium border-b-2 pb-0.5"
@@ -87,6 +121,7 @@ export default function Episodes() {
                 Episódios
               </span>
             </Link>
+
             <Link href="/about">
               <span
                 className="text-sm font-medium hover:opacity-70 transition"
@@ -95,17 +130,8 @@ export default function Episodes() {
                 Sobre
               </span>
             </Link>
-            {isAdmin ? (
-              <Button
-                onClick={() => setIsUploadModalOpen(true)}
-                size="sm"
-                className="gap-1"
-                style={{ backgroundColor: "var(--accent)", color: "var(--accent-foreground)" }}
-              >
-                <Plus className="w-4 h-4" />
-                Adicionar
-              </Button>
-            ) : (
+
+            {!isAdmin && (
               <Link href="/admin">
                 <Button
                   variant="outline"
@@ -117,6 +143,7 @@ export default function Episodes() {
               </Link>
             )}
           </div>
+
           <button
             className="md:hidden p-2"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -125,6 +152,7 @@ export default function Episodes() {
             {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
+
         {isMobileMenuOpen && (
           <div
             className="md:hidden border-t px-4 py-4 space-y-3"
@@ -139,6 +167,7 @@ export default function Episodes() {
                 Início
               </span>
             </Link>
+
             <Link href="/episodes">
               <span
                 className="block text-sm font-medium py-2"
@@ -148,6 +177,7 @@ export default function Episodes() {
                 Episódios
               </span>
             </Link>
+
             <Link href="/about">
               <span
                 className="block text-sm font-medium py-2"
@@ -157,20 +187,8 @@ export default function Episodes() {
                 Sobre
               </span>
             </Link>
-            {isAdmin ? (
-              <Button
-                onClick={() => {
-                  setIsUploadModalOpen(true);
-                  setIsMobileMenuOpen(false);
-                }}
-                size="sm"
-                className="w-full gap-1"
-                style={{ backgroundColor: "var(--accent)", color: "var(--accent-foreground)" }}
-              >
-                <Plus className="w-4 h-4" />
-                Adicionar
-              </Button>
-            ) : (
+
+            {!isAdmin && (
               <Link href="/admin">
                 <Button
                   variant="outline"
@@ -187,7 +205,6 @@ export default function Episodes() {
         )}
       </nav>
 
-      {/* Page Header */}
       <section
         className="py-12 md:py-16 relative overflow-hidden"
         style={{
@@ -202,12 +219,12 @@ export default function Episodes() {
             Todos os Episódios
           </h1>
           <p style={{ color: "var(--muted-foreground)" }}>
-            {episodes.length} episódio{episodes.length !== 1 ? "s" : ""} publicado{episodes.length !== 1 ? "s" : ""}
+            {episodes.length} episódio{episodes.length !== 1 ? "s" : ""} publicado
+            {episodes.length !== 1 ? "s" : ""}
           </p>
         </div>
       </section>
 
-      {/* Search */}
       <div className="container py-6">
         <div className="relative max-w-md">
           <Search
@@ -223,40 +240,47 @@ export default function Episodes() {
         </div>
       </div>
 
-      {/* Episodes Grid */}
       <div className="container pb-16">
-        {filtered.length > 0 ? (
+        {isLoading ? (
+          <div className="text-center py-20">
+            <p className="text-lg font-medium" style={{ color: "var(--foreground)" }}>
+              Carregando episódios...
+            </p>
+          </div>
+        ) : filtered.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filtered.map((episode) => (
-              <Link key={episode.id} href="/episodes">
-                <Card
-                  className="overflow-hidden hover:shadow-lg transition-all hover:border-primary/50 cursor-pointer"
-                  style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
-                >
-                  <div className="video-container">
-                    <iframe
-                      src={getEmbedUrl(episode.videoUrl)}
-                      title={episode.title}
-                      allowFullScreen
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    />
-                  </div>
-                  <div className="p-4 md:p-5">
-                    <p className="text-xs mb-1" style={{ color: "var(--muted-foreground)" }}>
-                      {formatDate(episode.publishedAt)}
-                    </p>
-                    <h3
-                      className="text-base font-bold mb-2 line-clamp-2"
-                      style={{ color: "var(--foreground)", fontFamily: "'Sora', sans-serif" }}
-                    >
-                      {episode.title}
-                    </h3>
-                    <p className="text-xs line-clamp-3" style={{ color: "var(--muted-foreground)" }}>
-                      {episode.description || "Sem descrição"}
-                    </p>
-                  </div>
-                </Card>
-              </Link>
+              <Card
+                key={episode.id}
+                className="overflow-hidden hover:shadow-lg transition-all hover:border-primary/50"
+                style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
+              >
+                <div className="video-container">
+                  <iframe
+                    src={getEmbedUrl(episode.video_url)}
+                    title={episode.title}
+                    allowFullScreen
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  />
+                </div>
+
+                <div className="p-4 md:p-5">
+                  <p className="text-xs mb-1" style={{ color: "var(--muted-foreground)" }}>
+                    {formatDate(episode.created_at)}
+                  </p>
+
+                  <h3
+                    className="text-base font-bold mb-2 line-clamp-2"
+                    style={{ color: "var(--foreground)", fontFamily: "'Sora', sans-serif" }}
+                  >
+                    {episode.title}
+                  </h3>
+
+                  <p className="text-xs line-clamp-3" style={{ color: "var(--muted-foreground)" }}>
+                    {episode.description || "Sem descrição"}
+                  </p>
+                </div>
+              </Card>
             ))}
           </div>
         ) : (
@@ -277,7 +301,6 @@ export default function Episodes() {
         )}
       </div>
 
-      {/* Footer */}
       <footer
         className="py-10 md:py-14 border-t"
         style={{
@@ -302,8 +325,11 @@ export default function Episodes() {
                   Política & Negócios
                 </span>
               </div>
-              <p className="text-xs md:text-sm opacity-80">Análises profundas sobre os temas que movem o Brasil</p>
+              <p className="text-xs md:text-sm opacity-80">
+                Análises profundas sobre os temas que movem o Brasil
+              </p>
             </div>
+
             <div>
               <h4 className="font-bold mb-3 text-sm">Navegação</h4>
               <ul className="space-y-2 opacity-80 text-xs md:text-sm">
@@ -324,6 +350,7 @@ export default function Episodes() {
                 </li>
               </ul>
             </div>
+
             <div>
               <h4 className="font-bold mb-3 text-sm">Comunidade</h4>
               <ul className="space-y-2 opacity-80 text-xs md:text-sm">
@@ -344,11 +371,13 @@ export default function Episodes() {
                 </li>
               </ul>
             </div>
+
             <div>
               <h4 className="font-bold mb-3 text-sm">Contato</h4>
               <p className="opacity-80 text-xs md:text-sm">contato@politicaenegocio.com</p>
             </div>
           </div>
+
           <div
             className="border-t pt-6 text-center opacity-70 text-xs md:text-sm"
             style={{ borderColor: "var(--border)" }}
@@ -357,16 +386,6 @@ export default function Episodes() {
           </div>
         </div>
       </footer>
-
-      <UploadEpisodeModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        onSuccess={() => {
-          setIsUploadModalOpen(false);
-          refetch();
-        }}
-        adminToken={adminToken || ""}
-      />
     </div>
   );
 }

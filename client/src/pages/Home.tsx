@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
-import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -12,20 +12,44 @@ import {
   Zap,
   Menu,
   X,
-  Plus,
 } from "lucide-react";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import UploadEpisodeModal from "@/components/UploadEpisodeModal";
+
+interface Episode {
+  id: number;
+  title: string;
+  description: string;
+  video_url: string;
+  created_at: string;
+}
+
+interface Sponsor {
+  id: number;
+  name: string;
+  logo: string;
+  url: string;
+}
+
+interface AdminProfile {
+  name: string;
+  logo: string;
+}
 
 function getEmbedUrl(url: string): string {
   if (!url) return "";
+
   const ytMatch = url.match(
     /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
   );
+
   if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`;
+
   if (url.includes("spotify.com")) {
-    return url.replace("open.spotify.com", "open.spotify.com/embed").replace("/episode/", "/embed/episode/");
+    return url
+      .replace("open.spotify.com", "open.spotify.com/embed")
+      .replace("/episode/", "/embed/episode/");
   }
+
   return url;
 }
 
@@ -38,7 +62,17 @@ function formatDate(date: Date | string) {
 }
 
 function SponsorsSection() {
-  const { data: sponsors = [] } = trpc.sponsors.list.useQuery();
+  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+
+  useEffect(() => {
+    try {
+      const savedSponsors = JSON.parse(localStorage.getItem("podcast_sponsors") || "[]");
+      setSponsors(savedSponsors);
+    } catch (error) {
+      console.error(error);
+      setSponsors([]);
+    }
+  }, []);
 
   if (sponsors.length === 0) {
     return (
@@ -50,7 +84,7 @@ function SponsorsSection() {
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-      {sponsors.map((sponsor: any) => (
+      {sponsors.map((sponsor) => (
         <a
           key={sponsor.id}
           href={sponsor.url || "#"}
@@ -67,7 +101,20 @@ function SponsorsSection() {
 }
 
 function AdminProfileSection() {
-  const { data: adminProfile } = trpc.adminProfile.get.useQuery();
+  const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
+
+  useEffect(() => {
+    try {
+      const savedProfile = JSON.parse(localStorage.getItem("podcast_admin_profile") || "{}");
+
+      if (savedProfile?.name) {
+        setAdminProfile(savedProfile);
+      }
+    } catch (error) {
+      console.error(error);
+      setAdminProfile(null);
+    }
+  }, []);
 
   if (!adminProfile || !adminProfile.name) {
     return null;
@@ -87,7 +134,10 @@ function AdminProfileSection() {
           <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
             Apresentado por
           </p>
-          <h3 className="text-lg md:text-xl font-bold" style={{ color: "var(--foreground)", fontFamily: "'Sora', sans-serif" }}>
+          <h3
+            className="text-lg md:text-xl font-bold"
+            style={{ color: "var(--foreground)", fontFamily: "'Sora', sans-serif" }}
+          >
             {adminProfile.name}
           </h3>
         </div>
@@ -98,15 +148,39 @@ function AdminProfileSection() {
 
 export default function Home() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const { isAdmin, adminToken } = useAdminAuth();
+  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [isLoadingEpisodes, setIsLoadingEpisodes] = useState(true);
+  const { isAdmin } = useAdminAuth();
 
-  const { data: episodes = [], refetch } = trpc.episodes.list.useQuery();
+  useEffect(() => {
+    loadRecentEpisodes();
+  }, []);
+
+  async function loadRecentEpisodes() {
+    try {
+      setIsLoadingEpisodes(true);
+
+      const { data, error } = await supabase
+        .from("episodes")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      if (error) throw error;
+
+      setEpisodes(data || []);
+    } catch (error) {
+      console.error("Erro ao carregar episódios:", error);
+      setEpisodes([]);
+    } finally {
+      setIsLoadingEpisodes(false);
+    }
+  }
+
   const recentEpisodes = episodes.slice(0, 3);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--background)" }}>
-      {/* Navbar */}
       <nav
         className="sticky top-0 z-50 border-b backdrop-blur-md"
         style={{ backgroundColor: "rgba(15, 20, 25, 0.8)", borderColor: "var(--border)" }}
@@ -131,7 +205,6 @@ export default function Home() {
             </div>
           </Link>
 
-          {/* Desktop nav */}
           <div className="hidden md:flex items-center gap-6">
             <Link href="/">
               <span
@@ -180,7 +253,6 @@ export default function Home() {
             )}
           </div>
 
-          {/* Mobile menu button */}
           <button
             className="md:hidden p-2"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -190,7 +262,6 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Mobile menu */}
         {isMobileMenuOpen && (
           <div
             className="md:hidden border-t px-4 py-4 space-y-3"
@@ -251,7 +322,6 @@ export default function Home() {
         )}
       </nav>
 
-      {/* Hero Section */}
       <section
         className="py-20 md:py-32 relative overflow-hidden"
         style={{
@@ -320,7 +390,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Features Section */}
       <section className="py-16 md:py-24" style={{ backgroundColor: "var(--background)" }}>
         <div className="container">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -372,7 +441,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Recent Episodes */}
       <section
         className="py-16 md:py-24"
         style={{ backgroundColor: "rgba(0, 217, 255, 0.02)" }}
@@ -403,7 +471,13 @@ export default function Home() {
             </Link>
           </div>
 
-          {recentEpisodes.length > 0 ? (
+          {isLoadingEpisodes ? (
+            <div className="text-center py-16">
+              <p className="text-lg font-medium mb-2" style={{ color: "var(--foreground)" }}>
+                Carregando episódios...
+              </p>
+            </div>
+          ) : recentEpisodes.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {recentEpisodes.map((episode) => (
                 <Link key={episode.id} href="/episodes">
@@ -413,7 +487,7 @@ export default function Home() {
                   >
                     <div className="video-container">
                       <iframe
-                        src={getEmbedUrl(episode.videoUrl)}
+                        src={getEmbedUrl(episode.video_url)}
                         title={episode.title}
                         allowFullScreen
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -421,7 +495,7 @@ export default function Home() {
                     </div>
                     <div className="p-4 md:p-5">
                       <p className="text-xs mb-1" style={{ color: "var(--muted-foreground)" }}>
-                        {formatDate(episode.publishedAt)}
+                        {formatDate(episode.created_at)}
                       </p>
                       <h3
                         className="text-base font-bold mb-2 line-clamp-2"
@@ -465,7 +539,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Sponsors Section */}
       <section className="py-16 md:py-24" style={{ backgroundColor: "var(--card)" }}>
         <div className="container">
           <h2
@@ -478,10 +551,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Admin Profile Section */}
       <AdminProfileSection />
 
-      {/* CTA Section */}
       <section
         className="py-16 md:py-24"
         style={{
@@ -512,7 +583,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Footer */}
       <footer
         className="py-10 md:py-14 border-t"
         style={{
@@ -597,16 +667,6 @@ export default function Home() {
           </div>
         </div>
       </footer>
-
-      <UploadEpisodeModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        onSuccess={() => {
-          setIsUploadModalOpen(false);
-          refetch();
-        }}
-        adminToken={adminToken || ""}
-      />
     </div>
   );
 }

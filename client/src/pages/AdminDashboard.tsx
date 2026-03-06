@@ -1,6 +1,6 @@
+import { supabase } from "@/lib/supabase";
 import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
-import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -20,8 +20,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-
-const ADMIN_TOKEN = "admin-secret-token";
 
 interface FormData {
   title: string;
@@ -44,8 +42,15 @@ interface Episode {
   id: number;
   title: string;
   description: string;
-  videoUrl: string;
-  publishedAt: string;
+  video_url: string;
+  created_at: string;
+}
+
+interface Sponsor {
+  id: number;
+  name: string;
+  logo: string;
+  url: string;
 }
 
 function formatDate(date: Date | string) {
@@ -68,17 +73,11 @@ export default function AdminDashboard() {
   const [successMessage, setSuccessMessage] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<FormData>({ title: "", description: "", videoUrl: "" });
+
   const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [episodesLoading, setEpisodesLoading] = useState(true);
 
-  const { data: sponsors = [] } = trpc.sponsors.list.useQuery(undefined, {
-    enabled: isAdmin,
-  });
-
-  const { data: adminProfile } = trpc.adminProfile.get.useQuery(undefined, {
-    enabled: isAdmin,
-  });
-
-  const utils = trpc.useUtils();
+  const [sponsors, setSponsors] = useState<Sponsor[]>([]);
 
   useEffect(() => {
     if (!isAdmin) {
@@ -87,52 +86,53 @@ export default function AdminDashboard() {
   }, [isAdmin, setLocation]);
 
   useEffect(() => {
-    const savedEpisodes = JSON.parse(localStorage.getItem("episodes") || "[]");
-    setEpisodes(savedEpisodes);
+    loadEpisodes();
+    loadSponsors();
+    loadProfile();
   }, []);
 
-  useEffect(() => {
-    if (adminProfile) {
-      setProfileForm({ name: adminProfile.name || "", logo: adminProfile.logo || "" });
+  async function loadEpisodes() {
+    try {
+      setEpisodesLoading(true);
+
+      const { data, error } = await supabase
+        .from("episodes")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      setEpisodes((data as Episode[]) || []);
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao carregar episódios");
+    } finally {
+      setEpisodesLoading(false);
     }
-  }, [adminProfile]);
+  }
 
-  const createSponsorMutation = trpc.sponsors.create.useMutation({
-    onSuccess: () => {
-      toast.success("Patrocinador adicionado!");
-      setSponsorForm({ name: "", logo: "", url: "" });
-      utils.sponsors.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
+  function loadSponsors() {
+    try {
+      const savedSponsors = JSON.parse(localStorage.getItem("podcast_sponsors") || "[]");
+      setSponsors(savedSponsors);
+    } catch (error) {
+      console.error(error);
+      setSponsors([]);
+    }
+  }
 
-  const deleteSponsorMutation = trpc.sponsors.delete.useMutation({
-    onSuccess: () => {
-      toast.success("Patrocinador removido!");
-      utils.sponsors.list.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const updateProfileMutation = trpc.adminProfile.update.useMutation({
-    onSuccess: () => {
-      toast.success("Perfil atualizado!");
-      utils.adminProfile.get.invalidate();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-
-  const logoutMutation = trpc.admin.logout.useMutation({
-    onSuccess: () => {
-      adminLogout();
-      toast.success("Desconectado com sucesso!");
-      setLocation("/admin");
-    },
-    onError: () => {
-      adminLogout();
-      setLocation("/admin");
-    },
-  });
+  function loadProfile() {
+    try {
+      const savedProfile = JSON.parse(localStorage.getItem("podcast_admin_profile") || "{}");
+      setProfileForm({
+        name: savedProfile.name || "",
+        logo: savedProfile.logo || "",
+      });
+    } catch (error) {
+      console.error(error);
+      setProfileForm({ name: "", logo: "" });
+    }
+  }
 
   if (!isAdmin) return null;
 
@@ -147,26 +147,35 @@ export default function AdminDashboard() {
     setIsSubmitting(true);
 
     try {
-      const savedEpisodes: Episode[] = JSON.parse(localStorage.getItem("episodes") || "[]");
+      const { data, error } = await supabase
+        .from("episodes")
+        .insert([
+          {
+            title: formData.title.trim(),
+            description: formData.description.trim(),
+            video_url: formData.videoUrl.trim(),
+          },
+        ])
+        .select()
+        .single();
 
-      const newEpisode: Episode = {
-        id: Date.now(),
-        title: formData.title,
-        description: formData.description,
-        videoUrl: formData.videoUrl,
-        publishedAt: new Date().toISOString(),
-      };
+      if (error) throw error;
 
-      const updatedEpisodes = [newEpisode, ...savedEpisodes];
+      if (data) {
+        setEpisodes((prev) => [data as Episode, ...prev]);
+      }
 
-      localStorage.setItem("episodes", JSON.stringify(updatedEpisodes));
-      setEpisodes(updatedEpisodes);
+      setFormData({
+        title: "",
+        description: "",
+        videoUrl: "",
+      });
 
-      setFormData({ title: "", description: "", videoUrl: "" });
       setSuccessMessage("Episódio publicado com sucesso!");
-      toast.success("Episódio criado com sucesso!");
+      toast.success("Episódio publicado!");
       setTimeout(() => setSuccessMessage(""), 3000);
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
       toast.error("Erro ao salvar episódio");
     } finally {
       setIsSubmitting(false);
@@ -180,22 +189,27 @@ export default function AdminDashboard() {
     }
 
     try {
-      const updatedEpisodes = episodes.map((ep) =>
-        ep.id === id
-          ? {
-              ...ep,
-              title: editForm.title,
-              description: editForm.description,
-              videoUrl: editForm.videoUrl,
-            }
-          : ep
+      const { data, error } = await supabase
+        .from("episodes")
+        .update({
+          title: editForm.title.trim(),
+          description: editForm.description.trim(),
+          video_url: editForm.videoUrl.trim(),
+        })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setEpisodes((prev) =>
+        prev.map((ep) => (ep.id === id ? (data as Episode) : ep))
       );
 
-      localStorage.setItem("episodes", JSON.stringify(updatedEpisodes));
-      setEpisodes(updatedEpisodes);
       setEditingId(null);
       toast.success("Episódio atualizado!");
     } catch (error) {
+      console.error(error);
       toast.error("Erro ao atualizar episódio");
     }
   };
@@ -204,36 +218,68 @@ export default function AdminDashboard() {
     if (!confirm(`Deseja remover o episódio "${title}"?`)) return;
 
     try {
-      const updatedEpisodes = episodes.filter((ep) => ep.id !== id);
-      localStorage.setItem("episodes", JSON.stringify(updatedEpisodes));
-      setEpisodes(updatedEpisodes);
+      const { error } = await supabase.from("episodes").delete().eq("id", id);
+
+      if (error) throw error;
+
+      setEpisodes((prev) => prev.filter((ep) => ep.id !== id));
       toast.success("Episódio removido!");
     } catch (error) {
+      console.error(error);
       toast.error("Erro ao remover episódio");
     }
   };
 
   const handleCreateSponsor = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!sponsorForm.name.trim() || !sponsorForm.logo.trim()) {
       toast.error("Preencha nome e logo do patrocinador");
       return;
     }
-    await createSponsorMutation.mutateAsync({ ...sponsorForm, adminToken: ADMIN_TOKEN });
+
+    const newSponsor: Sponsor = {
+      id: Date.now(),
+      name: sponsorForm.name.trim(),
+      logo: sponsorForm.logo.trim(),
+      url: sponsorForm.url.trim(),
+    };
+
+    const updatedSponsors = [newSponsor, ...sponsors];
+    localStorage.setItem("podcast_sponsors", JSON.stringify(updatedSponsors));
+    setSponsors(updatedSponsors);
+    setSponsorForm({ name: "", logo: "", url: "" });
+
+    toast.success("Patrocinador adicionado!");
   };
 
   const handleDeleteSponsor = async (id: number, name: string) => {
     if (!confirm(`Deseja remover o patrocinador "${name}"?`)) return;
-    await deleteSponsorMutation.mutateAsync({ id, adminToken: ADMIN_TOKEN });
+
+    const updatedSponsors = sponsors.filter((sponsor) => sponsor.id !== id);
+    localStorage.setItem("podcast_sponsors", JSON.stringify(updatedSponsors));
+    setSponsors(updatedSponsors);
+
+    toast.success("Patrocinador removido!");
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!profileForm.name.trim()) {
       toast.error("Preencha o nome do administrador");
       return;
     }
-    await updateProfileMutation.mutateAsync({ ...profileForm, adminToken: ADMIN_TOKEN });
+
+    const updatedProfile = {
+      name: profileForm.name.trim(),
+      logo: profileForm.logo.trim(),
+    };
+
+    localStorage.setItem("podcast_admin_profile", JSON.stringify(updatedProfile));
+    setProfileForm(updatedProfile);
+
+    toast.success("Perfil atualizado!");
   };
 
   const startEdit = (ep: Episode) => {
@@ -241,8 +287,14 @@ export default function AdminDashboard() {
     setEditForm({
       title: ep.title,
       description: ep.description || "",
-      videoUrl: ep.videoUrl,
+      videoUrl: ep.video_url,
     });
+  };
+
+  const handleLogout = () => {
+    adminLogout();
+    toast.success("Desconectado com sucesso!");
+    setLocation("/admin");
   };
 
   return (
@@ -275,10 +327,11 @@ export default function AdminDashboard() {
               </p>
             </div>
           </div>
+
           <Button
             variant="outline"
             size="sm"
-            onClick={() => logoutMutation.mutate()}
+            onClick={handleLogout}
             className="gap-2"
             style={{ borderColor: "var(--border)", color: "var(--foreground)" }}
           >
@@ -347,6 +400,7 @@ export default function AdminDashboard() {
                       disabled={isSubmitting}
                     />
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--foreground)" }}>
                       Descrição *
@@ -359,6 +413,7 @@ export default function AdminDashboard() {
                       disabled={isSubmitting}
                     />
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--foreground)" }}>
                       Link do Vídeo (YouTube ou Spotify) *
@@ -374,6 +429,7 @@ export default function AdminDashboard() {
                       Aceita links do YouTube e Spotify
                     </p>
                   </div>
+
                   <Button
                     type="submit"
                     disabled={isSubmitting}
@@ -425,88 +481,107 @@ export default function AdminDashboard() {
             <h2 className="text-lg font-bold mb-4" style={{ color: "var(--foreground)" }}>
               Episódios Publicados
             </h2>
-            <div className="space-y-3">
-              {episodes.map((ep) => (
-                <Card
-                  key={ep.id}
-                  className="p-4"
-                  style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
-                >
-                  {editingId === ep.id ? (
-                    <div className="space-y-3">
-                      <Input
-                        value={editForm.title}
-                        onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))}
-                        placeholder="Título"
-                      />
-                      <Textarea
-                        value={editForm.description}
-                        onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
-                        placeholder="Descrição"
-                        rows={3}
-                      />
-                      <Input
-                        type="url"
-                        value={editForm.videoUrl}
-                        onChange={(e) => setEditForm((p) => ({ ...p, videoUrl: e.target.value }))}
-                        placeholder="URL do vídeo"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => handleUpdate(ep.id)}
-                          style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
-                        >
-                          <Save className="w-4 h-4 mr-1" />
-                          Salvar
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setEditingId(null)}
-                          style={{ borderColor: "var(--border)", color: "var(--foreground)" }}
-                        >
-                          <X className="w-4 h-4 mr-1" />
-                          Cancelar
-                        </Button>
+
+            {episodesLoading ? (
+              <Card
+                className="p-6"
+                style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
+              >
+                <p style={{ color: "var(--muted-foreground)" }}>Carregando episódios...</p>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {episodes.map((ep) => (
+                  <Card
+                    key={ep.id}
+                    className="p-4"
+                    style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
+                  >
+                    {editingId === ep.id ? (
+                      <div className="space-y-3">
+                        <Input
+                          value={editForm.title}
+                          onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))}
+                          placeholder="Título"
+                        />
+                        <Textarea
+                          value={editForm.description}
+                          onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))}
+                          placeholder="Descrição"
+                          rows={3}
+                        />
+                        <Input
+                          type="url"
+                          value={editForm.videoUrl}
+                          onChange={(e) => setEditForm((p) => ({ ...p, videoUrl: e.target.value }))}
+                          placeholder="URL do vídeo"
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleUpdate(ep.id)}
+                            style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+                          >
+                            <Save className="w-4 h-4 mr-1" />
+                            Salvar
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingId(null)}
+                            style={{ borderColor: "var(--border)", color: "var(--foreground)" }}
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            Cancelar
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h3 className="font-bold" style={{ color: "var(--foreground)" }}>
-                          {ep.title}
-                        </h3>
-                        <p className="text-sm mt-1" style={{ color: "var(--muted-foreground)" }}>
-                          {ep.description}
-                        </p>
-                        <p className="text-xs mt-2" style={{ color: "var(--muted-foreground)" }}>
-                          Publicado em {formatDate(ep.publishedAt)}
-                        </p>
+                    ) : (
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h3 className="font-bold" style={{ color: "var(--foreground)" }}>
+                            {ep.title}
+                          </h3>
+                          <p className="text-sm mt-1" style={{ color: "var(--muted-foreground)" }}>
+                            {ep.description}
+                          </p>
+                          <p className="text-xs mt-2" style={{ color: "var(--muted-foreground)" }}>
+                            Publicado em {formatDate(ep.created_at)}
+                          </p>
+                        </div>
+                        <div className="flex gap-2 ml-4">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => startEdit(ep)}
+                            style={{ borderColor: "var(--border)", color: "var(--foreground)" }}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDelete(ep.id, ep.title)}
+                            style={{ borderColor: "var(--destructive)", color: "var(--destructive)" }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
-                      <div className="flex gap-2 ml-4">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => startEdit(ep)}
-                          style={{ borderColor: "var(--border)", color: "var(--foreground)" }}
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleDelete(ep.id, ep.title)}
-                          style={{ borderColor: "var(--destructive)", color: "var(--destructive)" }}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
+                    )}
+                  </Card>
+                ))}
+
+                {!episodes.length && (
+                  <Card
+                    className="p-6"
+                    style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
+                  >
+                    <p style={{ color: "var(--muted-foreground)" }}>Nenhum episódio publicado ainda.</p>
+                  </Card>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -530,6 +605,7 @@ export default function AdminDashboard() {
                       placeholder="Ex: Empresa XYZ"
                     />
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--foreground)" }}>
                       URL do Logo *
@@ -541,6 +617,7 @@ export default function AdminDashboard() {
                       placeholder="https://exemplo.com/logo.png"
                     />
                   </div>
+
                   <div>
                     <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--foreground)" }}>
                       Site do Patrocinador (opcional)
@@ -552,6 +629,7 @@ export default function AdminDashboard() {
                       placeholder="https://www.exemplo.com"
                     />
                   </div>
+
                   <Button
                     type="submit"
                     size="lg"
@@ -583,7 +661,7 @@ export default function AdminDashboard() {
               Patrocinadores Ativos
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {sponsors.map((sponsor: any) => (
+              {sponsors.map((sponsor) => (
                 <Card
                   key={sponsor.id}
                   className="p-4 flex flex-col items-center text-center"
@@ -616,6 +694,15 @@ export default function AdminDashboard() {
                   </Button>
                 </Card>
               ))}
+
+              {!sponsors.length && (
+                <Card
+                  className="p-6"
+                  style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}
+                >
+                  <p style={{ color: "var(--muted-foreground)" }}>Nenhum patrocinador cadastrado.</p>
+                </Card>
+              )}
             </div>
           </div>
         )}
@@ -639,6 +726,7 @@ export default function AdminDashboard() {
                     placeholder="Seu nome"
                   />
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--foreground)" }}>
                     URL do Logo (opcional)
@@ -653,6 +741,7 @@ export default function AdminDashboard() {
                     <img src={profileForm.logo} alt="Preview" className="w-20 h-20 object-contain mt-3" />
                   )}
                 </div>
+
                 <Button
                   type="submit"
                   size="lg"
